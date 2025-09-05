@@ -1,5 +1,9 @@
-;; PrimeWave - Zero-Knowledge Academic Credential Verification System
-;; Knowledge Tokens (KNO) with Credential Verification Protocol
+;; PrimeWave - Enhanced Zero-Knowledge Academic Credential Verification System
+;; Knowledge Tokens (KNO) with Advanced Credential Verification Protocol
+
+;; ============================================================================
+;; CONSTANTS & ERROR HANDLING
+;; ============================================================================
 
 ;; Error Constants
 (define-constant ERR-UNAUTHORIZED (err u1000))
@@ -15,220 +19,395 @@
 (define-constant ERR-ALREADY-VERIFIED (err u1010))
 (define-constant ERR-CREDENTIAL-COMPLETED (err u1011))
 (define-constant ERR-EMERGENCY-ACTIVE (err u1012))
+(define-constant ERR-INVALID-PARAMETERS (err u1013))
+(define-constant ERR-MILESTONE-ALREADY-VERIFIED (err u1014))
+(define-constant ERR-INSUFFICIENT-VERIFICATIONS (err u1015))
+(define-constant ERR-INVALID-PROOF-SYSTEM (err u1016))
 
 ;; Contract Constants
 (define-constant CONTRACT-OWNER tx-sender)
+(define-constant DEPLOYER tx-sender)
 (define-constant MINIMUM-STAKE u1000000) ;; 1 KNO token minimum stake
-(define-constant VERIFICATION-WINDOW u144) ;; ~24 hours in blocks
+(define-constant VERIFICATION-WINDOW u1440) ;; ~10 days in blocks
 (define-constant MIN-VERIFIERS u3)
-(define-constant ZK-VERIFICATION-THRESHOLD u75) ;; 75% accuracy threshold
+(define-constant MAX-VERIFIERS u20)
+(define-constant CONSENSUS-THRESHOLD u67) ;; 67% agreement required
+(define-constant MAX-MILESTONES u20)
+(define-constant MIN-ENROLLMENT u100000) ;; Minimum STX for enrollment
+(define-constant TOKEN-CONVERSION-RATE u10000) ;; STX to KNO conversion
+(define-constant REPUTATION-DECAY-BLOCKS u52560) ;; ~1 year in blocks
 
-;; Fungible Token Definition
+;; ============================================================================
+;; TOKEN DEFINITION
+;; ============================================================================
+
 (define-fungible-token knowledge-token)
 
-;; Data Variables
-(define-data-var total-credentials uint u0)
-(define-data-var total-certificates-verified uint u0)
-(define-data-var zk-protocol-active bool true)
-(define-data-var emergency-pause bool false)
-(define-data-var platform-fee-rate uint u250) ;; 2.5%
+;; ============================================================================
+;; DATA STORAGE
+;; ============================================================================
 
-;; Data Maps
+;; Global State Variables
+(define-data-var total-credentials uint u0)
+(define-data-var total-verifications uint u0)
+(define-data-var platform-fee-rate uint u250) ;; 2.5%
+(define-data-var emergency-pause bool false)
+(define-data-var zk-protocol-active bool true)
+(define-data-var next-credential-id uint u1)
+
+;; Institution Registry
+(define-map institution-registry
+  principal
+  {
+    name: (string-ascii 100),
+    country: (string-ascii 50),
+    accreditation-level: uint,
+    verified: bool,
+    registration-block: uint,
+    total-credentials: uint,
+    reputation-score: uint
+  }
+)
+
+;; Enhanced Credential Structure
 (define-map credentials
   uint
   {
     institution: principal,
     program-name: (string-ascii 100),
     field-of-study: (string-ascii 50),
+    degree-level: (string-ascii 30), ;; bachelor, master, phd, certificate
     target-graduates: uint,
     enrolled-students: uint,
+    graduated-students: uint,
     current-milestone: uint,
     total-milestones: uint,
-    academic-rigor: uint,
-    curriculum-diversity: uint,
-    employment-score: uint,
+    minimum-grade: uint, ;; Percentage 0-100
     active: bool,
     completed: bool,
-    zk-verified: bool,
-    proof-system: (string-ascii 64),
-    creation-block: uint
+    creation-block: uint,
+    completion-block: uint,
+    total-stx-locked: uint,
+    verification-method: (string-ascii 50) ;; zk-snark, zk-stark, merkle-proof
   }
 )
 
+;; Milestone Management
 (define-map credential-milestones
   {credential-id: uint, milestone: uint}
   {
-    description: (string-ascii 200),
-    graduation-amount: uint,
-    threshold-value: uint,
-    assessment-type: (string-ascii 30),
-    verification-proof: (string-ascii 500),
-    achieved: bool,
-    verification-block: uint,
-    verifier-count: uint
+    title: (string-ascii 100),
+    description: (string-ascii 300),
+    required-score: uint, ;; 0-100 percentage
+    weight: uint, ;; Milestone weight in final grade
+    assessment-type: (string-ascii 50), ;; exam, project, thesis, practicum
+    deadline-block: uint,
+    verification-reward: uint,
+    completed: bool,
+    completion-block: uint,
+    average-score: uint,
+    total-submissions: uint
   }
 )
 
-(define-map verifier-stakes
+;; Advanced Verifier System
+(define-map verifier-profiles
   principal
   {
+    expertise-areas: (list 5 (string-ascii 50)),
     staked-amount: uint,
-    active-verifications: uint,
-    successful-verifications: uint,
-    failed-verifications: uint,
-    reputation-score: uint,
-    last-verification-block: uint
+    locked-amount: uint, ;; Amount locked in active verifications
+    total-verifications: uint,
+    correct-verifications: uint,
+    reputation-score: uint, ;; 0-1000
+    last-activity-block: uint,
+    slashing-count: uint,
+    earnings: uint,
+    active: bool
   }
 )
 
-(define-map credential-verifications
-  {verifier: principal, credential-id: uint, milestone: uint}
+;; Verification Records
+(define-map milestone-verifications
+  {credential-id: uint, milestone: uint, verifier: principal}
   {
     verification-result: bool,
-    proof-data-hash: (buff 32),
+    confidence-score: uint, ;; 0-100
+    proof-hash: (buff 32),
     verification-block: uint,
-    stake-amount: uint,
-    processed: bool
+    stake-locked: uint,
+    processed: bool,
+    reward-claimed: bool
   }
 )
 
-(define-map student-enrollments
+;; Student Enrollment & Progress
+(define-map student-progress
   {student: principal, credential-id: uint}
   {
+    enrollment-block: uint,
     total-invested: uint,
-    token-balance: uint,
-    academic-earned: uint,
-    curriculum-earned: uint,
-    employment-earned: uint,
-    last-enrollment-block: uint
+    kno-balance: uint,
+    completed-milestones: uint,
+    current-grade: uint, ;; Running average
+    graduation-eligible: bool,
+    graduated: bool,
+    graduation-block: uint,
+    final-grade: uint,
+    certificate-hash: (buff 32)
   }
 )
 
-(define-map proof-data-registry
+;; Student Milestone Scores
+(define-map student-milestone-scores
+  {student: principal, credential-id: uint, milestone: uint}
+  {
+    score: uint,
+    submission-block: uint,
+    verified: bool,
+    verification-count: uint,
+    proof-hash: (buff 32)
+  }
+)
+
+;; ZK Proof Registry
+(define-map zk-proof-registry
   (buff 32)
   {
     credential-id: uint,
     milestone: uint,
-    assessment-score: uint,
-    timestamp: uint,
-    institution-hash: (buff 32),
-    verified: bool,
-    verification-count: uint
+    student: principal,
+    proof-type: (string-ascii 50),
+    verification-count: uint,
+    consensus-reached: bool,
+    timestamp: uint
   }
 )
 
-(define-map academic-network-connections
-  {student1: principal, student2: principal}
-  {
-    shared-credentials: uint,
-    connection-strength: uint,
-    collaborative-learning: uint,
-    last-interaction: uint
-  }
+;; ============================================================================
+;; UTILITY FUNCTIONS
+;; ============================================================================
+
+(define-private (calculate-kno-reward (stx-amount uint) (field-multiplier uint))
+  (/ (* stx-amount field-multiplier) TOKEN-CONVERSION-RATE)
 )
 
-;; Helper Functions
-(define-private (calculate-kno-tokens (amount uint) (field-of-study (string-ascii 50)))
-  ;; Simple token calculation - could be enhanced with field-based multipliers
-  (/ (* amount u100) u1000000) ;; 0.01% conversion rate
+(define-private (calculate-reputation-decay (last-block uint) (current-score uint))
+  (let ((blocks-passed (- block-height last-block)))
+    (if (> blocks-passed REPUTATION-DECAY-BLOCKS)
+        (let ((halved-score (/ current-score u2)))
+          (if (> halved-score u1) halved-score u1)) ;; Ensure minimum of 1
+        current-score
+    )
+  )
 )
 
-;; Owner Functions
-(define-public (set-platform-fee-rate (new-rate uint))
+(define-private (is-consensus-reached (positive-votes uint) (total-votes uint))
+  (and 
+    (>= total-votes MIN-VERIFIERS)
+    (>= (/ (* positive-votes u100) total-votes) CONSENSUS-THRESHOLD)
+  )
+)
+
+(define-private (calculate-weighted-grade (scores (list 20 uint)) (weights (list 20 uint)))
+  (let (
+    (total-weighted-score (fold + (map * scores weights) u0))
+    (total-weights (fold + weights u0))
+  )
+    (if (> total-weights u0)
+        (/ total-weighted-score total-weights)
+        u0
+    )
+  )
+)
+
+;; ============================================================================
+;; ADMIN FUNCTIONS
+;; ============================================================================
+
+(define-public (register-institution 
+  (institution principal) 
+  (name (string-ascii 100)) 
+  (country (string-ascii 50))
+  (accreditation-level uint)
+)
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (asserts! (<= new-rate u1000) (err u2000)) ;; Max 10% fee
-    (ok (var-set platform-fee-rate new-rate))
+    (asserts! (<= accreditation-level u5) ERR-INVALID-PARAMETERS)
+    
+    (map-set institution-registry institution
+      {
+        name: name,
+        country: country,
+        accreditation-level: accreditation-level,
+        verified: true,
+        registration-block: block-height,
+        total-credentials: u0,
+        reputation-score: u500 ;; Start with medium reputation
+      }
+    )
+    (ok true)
+  )
+)
+
+(define-public (update-platform-fee (new-fee-rate uint))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
+    (asserts! (<= new-fee-rate u1000) ERR-INVALID-PARAMETERS) ;; Max 10%
+    (var-set platform-fee-rate new-fee-rate)
+    (ok true)
   )
 )
 
 (define-public (toggle-emergency-pause)
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (ok (var-set emergency-pause (not (var-get emergency-pause))))
+    (var-set emergency-pause (not (var-get emergency-pause)))
+    (ok (var-get emergency-pause))
   )
 )
 
-(define-public (set-zk-protocol-status (active bool))
-  (begin
-    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (ok (var-set zk-protocol-active active))
-  )
-)
+;; ============================================================================
+;; CREDENTIAL MANAGEMENT
+;; ============================================================================
 
-;; Public Functions
-(define-public (create-credential 
+(define-public (create-credential
   (program-name (string-ascii 100))
   (field-of-study (string-ascii 50))
+  (degree-level (string-ascii 30))
   (target-graduates uint)
   (total-milestones uint)
-  (proof-system (string-ascii 64))
+  (minimum-grade uint)
+  (verification-method (string-ascii 50))
 )
   (let (
-    (credential-id (+ (var-get total-credentials) u1))
+    (credential-id (var-get next-credential-id))
+    (institution-data (map-get? institution-registry tx-sender))
   )
     (asserts! (not (var-get emergency-pause)) ERR-EMERGENCY-ACTIVE)
-    (asserts! (> target-graduates u0) (err u2001))
-    (asserts! (> total-milestones u0) (err u2002))
-    (asserts! (<= total-milestones u10) (err u2003))
+    (asserts! (is-some institution-data) ERR-UNAUTHORIZED)
+    (asserts! (and (> target-graduates u0) (<= target-graduates u10000)) ERR-INVALID-PARAMETERS)
+    (asserts! (and (> total-milestones u0) (<= total-milestones MAX-MILESTONES)) ERR-INVALID-PARAMETERS)
+    (asserts! (<= minimum-grade u100) ERR-INVALID-PARAMETERS)
     
     (map-set credentials credential-id
       {
         institution: tx-sender,
         program-name: program-name,
         field-of-study: field-of-study,
+        degree-level: degree-level,
         target-graduates: target-graduates,
         enrolled-students: u0,
+        graduated-students: u0,
         current-milestone: u1,
         total-milestones: total-milestones,
-        academic-rigor: u0,
-        curriculum-diversity: u0,
-        employment-score: u0,
+        minimum-grade: minimum-grade,
         active: true,
         completed: false,
-        zk-verified: false,
-        proof-system: proof-system,
-        creation-block: block-height
+        creation-block: block-height,
+        completion-block: u0,
+        total-stx-locked: u0,
+        verification-method: verification-method
       }
     )
     
-    (var-set total-credentials credential-id)
+    ;; Update institution stats
+    (match institution-data
+      inst-data (map-set institution-registry tx-sender
+        (merge inst-data {total-credentials: (+ (get total-credentials inst-data) u1)}))
+      false
+    )
+    
+    (var-set next-credential-id (+ credential-id u1))
+    (var-set total-credentials (+ (var-get total-credentials) u1))
+    
     (ok credential-id)
   )
 )
 
-(define-public (enroll-in-credential (credential-id uint) (amount uint))
+(define-public (add-milestone
+  (credential-id uint)
+  (milestone uint)
+  (title (string-ascii 100))
+  (description (string-ascii 300))
+  (required-score uint)
+  (weight uint)
+  (assessment-type (string-ascii 50))
+  (deadline-block uint)
+  (verification-reward uint)
+)
   (let (
     (credential (unwrap! (map-get? credentials credential-id) ERR-CREDENTIAL-NOT-FOUND))
-    (current-enrollment (default-to 
-      {total-invested: u0, token-balance: u0, academic-earned: u0, 
-       curriculum-earned: u0, employment-earned: u0, last-enrollment-block: u0}
-      (map-get? student-enrollments {student: tx-sender, credential-id: credential-id})
-    ))
-    (kno-tokens (calculate-kno-tokens amount (get field-of-study credential)))
+  )
+    (asserts! (is-eq tx-sender (get institution credential)) ERR-UNAUTHORIZED)
+    (asserts! (get active credential) ERR-CREDENTIAL-INACTIVE)
+    (asserts! (<= milestone (get total-milestones credential)) ERR-INVALID-MILESTONE)
+    (asserts! (<= required-score u100) ERR-INVALID-PARAMETERS)
+    (asserts! (> deadline-block block-height) ERR-INVALID-PARAMETERS)
+    
+    (map-set credential-milestones {credential-id: credential-id, milestone: milestone}
+      {
+        title: title,
+        description: description,
+        required-score: required-score,
+        weight: weight,
+        assessment-type: assessment-type,
+        deadline-block: deadline-block,
+        verification-reward: verification-reward,
+        completed: false,
+        completion-block: u0,
+        average-score: u0,
+        total-submissions: u0
+      }
+    )
+    
+    (ok true)
+  )
+)
+
+;; ============================================================================
+;; STUDENT ENROLLMENT & PROGRESS
+;; ============================================================================
+
+(define-public (enroll-in-credential (credential-id uint) (stx-amount uint))
+  (let (
+    (credential (unwrap! (map-get? credentials credential-id) ERR-CREDENTIAL-NOT-FOUND))
+    (kno-tokens (calculate-kno-reward stx-amount u1))
+    (platform-fee (/ (* stx-amount (var-get platform-fee-rate)) u10000))
+    (net-amount (- stx-amount platform-fee))
   )
     (asserts! (not (var-get emergency-pause)) ERR-EMERGENCY-ACTIVE)
     (asserts! (get active credential) ERR-CREDENTIAL-INACTIVE)
-    (asserts! (not (get completed credential)) ERR-CREDENTIAL-COMPLETED)
-    (asserts! (> amount u0) ERR-INSUFFICIENT-FUNDS)
+    (asserts! (>= stx-amount MIN-ENROLLMENT) ERR-INSUFFICIENT-FUNDS)
     
-    ;; Transfer STX from student to contract
-    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+    ;; Transfer STX (net amount goes to institution, fee to contract)
+    (try! (stx-transfer? net-amount tx-sender (get institution credential)))
+    (try! (stx-transfer? platform-fee tx-sender (as-contract tx-sender)))
     
     ;; Mint KNO tokens to student
     (try! (ft-mint? knowledge-token kno-tokens tx-sender))
     
-    ;; Update credential
-    (map-set credentials credential-id
-      (merge credential {enrolled-students: (+ (get enrolled-students credential) amount)})
+    ;; Record student enrollment
+    (map-set student-progress {student: tx-sender, credential-id: credential-id}
+      {
+        enrollment-block: block-height,
+        total-invested: stx-amount,
+        kno-balance: kno-tokens,
+        completed-milestones: u0,
+        current-grade: u0,
+        graduation-eligible: false,
+        graduated: false,
+        graduation-block: u0,
+        final-grade: u0,
+        certificate-hash: 0x00
+      }
     )
     
-    ;; Update student enrollment
-    (map-set student-enrollments {student: tx-sender, credential-id: credential-id}
-      (merge current-enrollment {
-        total-invested: (+ (get total-invested current-enrollment) amount),
-        token-balance: (+ (get token-balance current-enrollment) kno-tokens),
-        last-enrollment-block: block-height
+    ;; Update credential enrollment count
+    (map-set credentials credential-id
+      (merge credential {
+        enrolled-students: (+ (get enrolled-students credential) u1),
+        total-stx-locked: (+ (get total-stx-locked credential) net-amount)
       })
     )
     
@@ -236,144 +415,203 @@
   )
 )
 
-(define-public (stake-for-verification (stake-amount uint))
-  (let (
-    (current-stake (default-to 
-      {staked-amount: u0, active-verifications: u0, successful-verifications: u0,
-       failed-verifications: u0, reputation-score: u100, last-verification-block: u0}
-      (map-get? verifier-stakes tx-sender)
-    ))
-  )
-    (asserts! (>= stake-amount MINIMUM-STAKE) ERR-INSUFFICIENT-STAKE)
-    (asserts! (>= (ft-get-balance knowledge-token tx-sender) stake-amount) ERR-INSUFFICIENT-FUNDS)
-    
-    ;; Lock tokens for staking
-    (try! (ft-transfer? knowledge-token stake-amount tx-sender (as-contract tx-sender)))
-    
-    (map-set verifier-stakes tx-sender
-      (merge current-stake {
-        staked-amount: (+ (get staked-amount current-stake) stake-amount)
-      })
-    )
-    
-    (ok true)
-  )
-)
-
-(define-public (submit-proof-data 
-  (credential-id uint) 
-  (milestone uint) 
-  (assessment-score uint) 
-  (institution-hash (buff 32))
-  (data-hash (buff 32))
+(define-public (submit-milestone-work
+  (credential-id uint)
+  (milestone uint)
+  (proof-hash (buff 32))
+  (self-assessed-score uint)
 )
   (let (
     (credential (unwrap! (map-get? credentials credential-id) ERR-CREDENTIAL-NOT-FOUND))
     (milestone-data (unwrap! (map-get? credential-milestones {credential-id: credential-id, milestone: milestone}) ERR-INVALID-MILESTONE))
+    (student-data (unwrap! (map-get? student-progress {student: tx-sender, credential-id: credential-id}) ERR-UNAUTHORIZED))
   )
-    (asserts! (not (var-get emergency-pause)) ERR-EMERGENCY-ACTIVE)
     (asserts! (get active credential) ERR-CREDENTIAL-INACTIVE)
-    (asserts! (is-eq (get current-milestone credential) milestone) ERR-INVALID-MILESTONE)
-    (asserts! (var-get zk-protocol-active) (err u2004))
+    (asserts! (<= self-assessed-score u100) ERR-INVALID-PARAMETERS)
+    (asserts! (< block-height (get deadline-block milestone-data)) ERR-VERIFICATION-EXPIRED)
     
-    (map-set proof-data-registry data-hash
+    ;; Record milestone submission
+    (map-set student-milestone-scores {student: tx-sender, credential-id: credential-id, milestone: milestone}
+      {
+        score: self-assessed-score,
+        submission-block: block-height,
+        verified: false,
+        verification-count: u0,
+        proof-hash: proof-hash
+      }
+    )
+    
+    ;; Register ZK proof
+    (map-set zk-proof-registry proof-hash
       {
         credential-id: credential-id,
         milestone: milestone,
-        assessment-score: assessment-score,
-        timestamp: block-height,
-        institution-hash: institution-hash,
-        verified: false,
-        verification-count: u0
+        student: tx-sender,
+        proof-type: (get verification-method credential),
+        verification-count: u0,
+        consensus-reached: false,
+        timestamp: block-height
       }
     )
     
-    (ok data-hash)
+    (ok proof-hash)
   )
 )
 
-(define-public (verify-milestone 
-  (credential-id uint) 
-  (milestone uint) 
-  (verification-result bool) 
-  (proof-data-hash (buff 32))
+;; ============================================================================
+;; VERIFIER SYSTEM
+;; ============================================================================
+
+(define-public (register-as-verifier 
+  (expertise-areas (list 5 (string-ascii 50)))
+  (initial-stake uint)
 )
-  (let (
-    (verifier-stake (unwrap! (map-get? verifier-stakes tx-sender) ERR-VERIFIER-NOT-STAKED))
-    (credential (unwrap! (map-get? credentials credential-id) ERR-CREDENTIAL-NOT-FOUND))
-    (proof-data (unwrap! (map-get? proof-data-registry proof-data-hash) ERR-PROOF-DATA-INVALID))
-    (verification-key {verifier: tx-sender, credential-id: credential-id, milestone: milestone})
-    (existing-verification (map-get? credential-verifications verification-key))
-  )
-    (asserts! (> (get staked-amount verifier-stake) u0) ERR-INSUFFICIENT-STAKE)
-    (asserts! (get active credential) ERR-CREDENTIAL-INACTIVE)
-    (asserts! (is-eq (get current-milestone credential) milestone) ERR-INVALID-MILESTONE)
-    (asserts! (is-none existing-verification) ERR-ALREADY-VERIFIED)
-    (asserts! (< (- block-height (get timestamp proof-data)) VERIFICATION-WINDOW) ERR-VERIFICATION-EXPIRED)
+  (begin
+    (asserts! (>= initial-stake MINIMUM-STAKE) ERR-INSUFFICIENT-STAKE)
+    (asserts! (>= (ft-get-balance knowledge-token tx-sender) initial-stake) ERR-INSUFFICIENT-FUNDS)
     
-    ;; Record verification
-    (map-set credential-verifications verification-key
+    ;; Lock tokens for staking
+    (try! (ft-transfer? knowledge-token initial-stake tx-sender (as-contract tx-sender)))
+    
+    (map-set verifier-profiles tx-sender
       {
-        verification-result: verification-result,
-        proof-data-hash: proof-data-hash,
-        verification-block: block-height,
-        stake-amount: (get staked-amount verifier-stake),
-        processed: false
+        expertise-areas: expertise-areas,
+        staked-amount: initial-stake,
+        locked-amount: u0,
+        total-verifications: u0,
+        correct-verifications: u0,
+        reputation-score: u500, ;; Start with medium reputation
+        last-activity-block: block-height,
+        slashing-count: u0,
+        earnings: u0,
+        active: true
       }
-    )
-    
-    ;; Update verifier stats
-    (map-set verifier-stakes tx-sender
-      (merge verifier-stake {
-        active-verifications: (+ (get active-verifications verifier-stake) u1),
-        last-verification-block: block-height
-      })
-    )
-    
-    ;; Update proof data verification count
-    (map-set proof-data-registry proof-data-hash
-      (merge proof-data {
-        verification-count: (+ (get verification-count proof-data) u1)
-      })
     )
     
     (ok true)
   )
 )
 
-;; Read-only Functions
-(define-read-only (get-credential (credential-id uint))
+(define-public (verify-student-milestone
+  (credential-id uint)
+  (milestone uint)
+  (student principal)
+  (verification-result bool)
+  (confidence-score uint)
+  (proof-hash (buff 32))
+)
+  (let (
+    (verifier-profile (unwrap! (map-get? verifier-profiles tx-sender) ERR-VERIFIER-NOT-STAKED))
+    (milestone-data (unwrap! (map-get? credential-milestones {credential-id: credential-id, milestone: milestone}) ERR-INVALID-MILESTONE))
+    (student-submission (unwrap! (map-get? student-milestone-scores {student: student, credential-id: credential-id, milestone: milestone}) ERR-PROOF-DATA-INVALID))
+    (verification-key {credential-id: credential-id, milestone: milestone, verifier: tx-sender})
+    (stake-amount (/ (get staked-amount verifier-profile) u10)) ;; Lock 10% of stake
+  )
+    (asserts! (get active verifier-profile) ERR-VERIFIER-NOT-STAKED)
+    (asserts! (<= confidence-score u100) ERR-INVALID-PARAMETERS)
+    (asserts! (is-eq proof-hash (get proof-hash student-submission)) ERR-PROOF-DATA-INVALID)
+    (asserts! (is-none (map-get? milestone-verifications verification-key)) ERR-ALREADY-VERIFIED)
+    
+    ;; Lock portion of verifier's stake
+    (map-set verifier-profiles tx-sender
+      (merge verifier-profile {
+        locked-amount: (+ (get locked-amount verifier-profile) stake-amount),
+        total-verifications: (+ (get total-verifications verifier-profile) u1),
+        last-activity-block: block-height
+      })
+    )
+    
+    ;; Record verification
+    (map-set milestone-verifications verification-key
+      {
+        verification-result: verification-result,
+        confidence-score: confidence-score,
+        proof-hash: proof-hash,
+        verification-block: block-height,
+        stake-locked: stake-amount,
+        processed: false,
+        reward-claimed: false
+      }
+    )
+    
+    ;; Update ZK proof verification count
+    (match (map-get? zk-proof-registry proof-hash)
+      proof-data (map-set zk-proof-registry proof-hash
+        (merge proof-data {verification-count: (+ (get verification-count proof-data) u1)}))
+      false
+    )
+    
+    (var-set total-verifications (+ (var-get total-verifications) u1))
+    (ok true)
+  )
+)
+
+;; ============================================================================
+;; READ-ONLY FUNCTIONS
+;; ============================================================================
+
+(define-read-only (get-credential-details (credential-id uint))
   (map-get? credentials credential-id)
 )
 
-(define-read-only (get-credential-milestone (credential-id uint) (milestone uint))
+(define-read-only (get-milestone-info (credential-id uint) (milestone uint))
   (map-get? credential-milestones {credential-id: credential-id, milestone: milestone})
 )
 
-(define-read-only (get-verifier-stake (verifier principal))
-  (map-get? verifier-stakes verifier)
+(define-read-only (get-student-progress (student principal) (credential-id uint))
+  (map-get? student-progress {student: student, credential-id: credential-id})
 )
 
-(define-read-only (get-student-enrollment (student principal) (credential-id uint))
-  (map-get? student-enrollments {student: student, credential-id: credential-id})
+(define-read-only (get-verifier-profile (verifier principal))
+  (map-get? verifier-profiles verifier)
 )
 
-(define-read-only (get-proof-data (data-hash (buff 32)))
-  (map-get? proof-data-registry data-hash)
+(define-read-only (get-verification-record (credential-id uint) (milestone uint) (verifier principal))
+  (map-get? milestone-verifications {credential-id: credential-id, milestone: milestone, verifier: verifier})
 )
 
-(define-read-only (get-total-credentials)
-  (var-get total-credentials)
+(define-read-only (get-institution-info (institution principal))
+  (map-get? institution-registry institution)
 )
 
-(define-read-only (get-platform-fee-rate)
-  (var-get platform-fee-rate)
+(define-read-only (get-student-milestone-score (student principal) (credential-id uint) (milestone uint))
+  (map-get? student-milestone-scores {student: student, credential-id: credential-id, milestone: milestone})
 )
 
-(define-read-only (is-emergency-paused)
-  (var-get emergency-pause)
+(define-read-only (get-zk-proof-info (proof-hash (buff 32)))
+  (map-get? zk-proof-registry proof-hash)
 )
 
-(define-read-only (get-token-balance (student principal))
-  (ft-get-balance knowledge-token student)
+(define-read-only (get-kno-balance (user principal))
+  (ft-get-balance knowledge-token user)
+)
+
+(define-read-only (get-platform-stats)
+  {
+    total-credentials: (var-get total-credentials),
+    total-verifications: (var-get total-verifications),
+    platform-fee-rate: (var-get platform-fee-rate),
+    emergency-paused: (var-get emergency-pause),
+    zk-protocol-active: (var-get zk-protocol-active)
+  }
+)
+
+;; ============================================================================
+;; TOKEN INTERFACE COMPLIANCE
+;; ============================================================================
+
+(define-read-only (get-name)
+  (ok "Knowledge Token")
+)
+
+(define-read-only (get-symbol)
+  (ok "KNO")
+)
+
+(define-read-only (get-decimals)
+  (ok u6)
+)
+
+(define-read-only (get-total-supply)
+  (ok (ft-get-supply knowledge-token))
 )
